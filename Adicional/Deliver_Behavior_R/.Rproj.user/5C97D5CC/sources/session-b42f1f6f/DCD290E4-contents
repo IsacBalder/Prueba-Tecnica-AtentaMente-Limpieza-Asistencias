@@ -1,0 +1,75 @@
+# ==========================================================
+# PROYECTO ADICIONAL: Pipeline de Limpieza - Delivery Behavior
+# Candidato: Isac Alejandro Balderas Sánchez
+# ==========================================================
+# NOTA: Transformación de flujo modular Python a R.
+# Procesa datos de Amazon Delivery: fechas, tipos y nulos.
+# ==========================================================
+
+library(tidyverse)
+library(janitor)
+library(lubridate)
+library(writexl)
+
+# CONFIGURACIÓN DE RUTAS
+# Al usar .Rproj, las rutas parten desde la raíz del proyecto
+input_path  <- "data/amazon_delivery_original.csv"
+output_path <- "output/dataset_limpio_para_analisis.csv"
+output_path_xlsx <- "output/dataset_limpio_para_analisis.xlsx"
+
+# CARGA DE DATOS
+# Lectura del dataset original
+df <- read_csv(input_path, col_types = cols(order_date = col_character()))
+
+# LIMPIEZA DE COLUMNAS
+# Estandarización a minúsculas para evitar errores de sintaxis
+df <- df %>% 
+  clean_names()
+
+# NORMALIZACIÓN DE TEXTO
+# Conversión de categorías a minúsculas
+cols_cat <- c("weather", "traffic", "vehicle", "area", "category")
+
+df <- df %>%
+  mutate(across(all_of(cols_cat), str_to_lower))
+
+# CONVERSIÓN DE TIPOS
+df <- df %>%
+  mutate(
+    # parse_date_time es más robusto que dmy() solo
+    order_date = parse_date_time(order_date, orders = c("dmy", "mdy", "ymd")),
+    
+    # Limpieza de espacios y conversión de tiempos
+    order_time = hms(str_trim(as.character(order_time))),
+    pickup_time = hms(str_trim(as.character(pickup_time)))
+  )
+
+# CATEGORIZACIÓN
+# Conversión a factores para optimizar el análisis
+df <- df %>%
+  mutate(across(all_of(cols_cat), as.factor))
+
+# MANEJO DE VALORES NULOS
+# Imputación por medidas de tendencia central y etiquetas desconocidas
+df <- df %>%
+  mutate(
+    # Reemplazo de NA en clima por nivel 'unknown'
+    weather = fct_na_value_to_level(weather, level = "unknown"),
+    
+    # Imputación de edad y rating
+    agent_age = ifelse(is.na(agent_age), 
+                       median(agent_age, na.rm = TRUE), 
+                       agent_age),
+    agent_rating = ifelse(is.na(agent_rating), 
+                          mean(agent_rating, na.rm = TRUE), 
+                          agent_rating)
+  )
+
+# EXPORTACIÓN
+# Guardado del dataset final en la carpeta de resultados
+if(!dir.exists("output")) dir.create("output")
+
+write_csv(df, output_path)
+write_xlsx(df,output_path_xlsx)
+
+message("Proceso finalizado con éxito.")
